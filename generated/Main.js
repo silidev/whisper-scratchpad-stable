@@ -8,21 +8,50 @@ var blinkSlow = HtmlUtils.blinkSlow;
 var escapeForRegExp = HelgeUtils.Strings.escapeRegExp;
 var elementWithId = HtmlUtils.NeverNull.elementWithId;
 var TextAreaWrapper = HtmlUtils.TextAreas.TextAreaWrapper;
-var LocalStorage = HtmlUtils.BrowserStorage.LocalStorage;
 var Cookies = HtmlUtils.BrowserStorage.Cookies;
-var BrowserStorage = HtmlUtils.BrowserStorage;
 import { ctrlYRedo, ctrlZUndo } from "./DontInspect.js";
 import { HelgeUtils } from "./HelgeUtils.js";
-import { INSERT_EDITOR_INTO_PROMPT, NEW_NOTE_DELIMITER, VERSION, WHERE_TO_INSERT_AT, WHISPER_TEMPERATURE } from "./Config.js";
+import { INSERT_EDITOR_INTO_PROMPT, LONG_STORAGE_PROVIDER, NEW_NOTE_DELIMITER, VERSION, WHERE_TO_INSERT_AT, WHISPER_TEMPERATURE } from "./Config.js";
 import { createCutFunction } from "./CutButton.js";
 import { HtmlUtils } from "./HtmlUtils.js";
 import { CurrentNote } from "./CurrentNote.js";
+import { mkConfig, generateCsv, download } from 
+// @ts-ignore
+"../nodecopy/export-to-csv/output/index.js";
 /** Inlined from HelgeUtils.Test.runTestsOnlyToday */
-const RUN_TESTS = HtmlUtils.isMsWindows() && new Date().toISOString().slice(0, 10) === "2024-01-27";
+const RUN_TESTS = HtmlUtils.isMsWindows() && new Date().toISOString()
+    .slice(0, 10) === "2024-01-27";
 if (RUN_TESTS)
     console.log("RUN_TESTS is true. This is only for " +
         "testing. Set it to false in production.");
 HtmlUtils.ErrorHandling.ExceptionHandlers.installGlobalDefault();
+export var Csv;
+(function (Csv) {
+    // mkConfig merges your options with the defaults
+    // and returns WithDefaults<ConfigOptions>
+    var buttonWithId = HtmlUtils.NeverNull.buttonWithId;
+    const csvConfig = mkConfig({ useKeysAsHeaders: true });
+    const mockData = [
+        {
+            name: "Rouky",
+            date: "2023-09-01",
+            percentage: 0.4,
+            quoted: '"Pickles"',
+        },
+        {
+            name: "Keiko",
+            date: "2023-09-01",
+            percentage: 0.9,
+            quoted: '"Cactus"',
+        },
+    ];
+    // Converts your Array<Object> to a CsvOutput string based on the configs
+    const csv = generateCsv(csvConfig)(mockData);
+    // Add a click handler that will run the `download` function.
+    // `download` takes `csvConfig` and the generated `CsvOutput`
+    // from `generateCsv`.
+    buttonWithId("downloadCsvButton").addEventListener("click", () => download(csvConfig)(csv));
+})(Csv || (Csv = {}));
 export var mainEditor;
 (function (mainEditor) {
     let Undo;
@@ -38,8 +67,23 @@ export var mainEditor;
             undoBuffer = mainEditorTextarea.value;
         };
     })(Undo = mainEditor.Undo || (mainEditor.Undo = {}));
+    mainEditor.append = (insertedString) => {
+        TextAreas.appendTextAndPutCursorAfter(mainEditorTextarea, insertedString);
+        mainEditor.save();
+        TextAreas.scrollToEnd(mainEditorTextarea);
+    };
+    mainEditor.appendDelimiter = () => {
+        mainEditorTextareaWrapper.trim();
+        mainEditor.append('\n' + NEW_NOTE_DELIMITER);
+        mainEditorTextarea.focus();
+    };
     mainEditor.save = () => {
-        LocalStorage.set("editorText", textAreaWithId("mainEditorTextarea").value);
+        try {
+            LONG_STORAGE_PROVIDER.set("editorText", textAreaWithId("mainEditorTextarea").value);
+        }
+        catch (e) {
+            prompt("Error saving editor text: " + e);
+        }
         // Delete old cookie
         // Cookies.set("editorText", ""); // This used to be stored in a cookie.
     };
@@ -69,7 +113,7 @@ var Misc;
 export var Menu;
 (function (Menu) {
     var WcMenu = HtmlUtils.Menus.WcMenu;
-    Menu.wireMenuItem = WcMenu.addMenuItem("editorMenuHeading");
+    Menu.wireMenuItem = WcMenu.addItem("editorMenuHeading");
     Menu.close = () => WcMenu.close("editorMenuHeading");
 })(Menu || (Menu = {}));
 export var UiFunctions;
@@ -83,11 +127,6 @@ export var UiFunctions;
         var Cookies = HtmlUtils.BrowserStorage.Cookies;
         var addKeyboardShortcuts = Misc.addKeyboardShortcuts;
         var suppressUnusedWarning = HelgeUtils.suppressUnusedWarning;
-        Buttons.appendDelimiterToMainEditor = () => {
-            mainEditorTextareaWrapper.trim();
-            appendToMainEditor('\n' + NEW_NOTE_DELIMITER);
-            mainEditorTextarea.focus();
-        };
         let Media;
         (function (Media) {
             var DelimiterSearch = HelgeUtils.Strings.DelimiterSearch;
@@ -272,7 +311,7 @@ export var UiFunctions;
             };
             const wireUploadButton = () => {
                 const transcribeSelectedFile = () => {
-                    const fileInput = document.getElementById('fileToUploadSelector');
+                    const fileInput = inputElementWithId('fileToUploadSelector');
                     if (!fileInput?.files?.[0])
                         return;
                     const file = fileInput.files[0];
@@ -281,7 +320,7 @@ export var UiFunctions;
                         if (event.target === null || event.target.result === null)
                             return;
                         audioBlob = new Blob([event.target.result], { type: file.type });
-                        Buttons.appendDelimiterToMainEditor();
+                        mainEditor.appendDelimiter();
                         Media.transcribeAudioBlob();
                     };
                     reader.readAsArrayBuffer(file);
@@ -430,7 +469,7 @@ export var UiFunctions;
             HtmlUtils.addClickListener("ctrlYButton", ctrlYRedo);
             HtmlUtils.addClickListener("addReplaceRuleButton", addReplaceRule);
             HtmlUtils.addClickListener("addWordReplaceRuleButton", Buttons.addWordReplaceRule);
-            HtmlUtils.addClickListener("insertNewNoteDelimiterButton", Buttons.appendDelimiterToMainEditor);
+            HtmlUtils.addClickListener("insertNewNoteDelimiterButton", mainEditor.appendDelimiter);
             // cancelRecording
             Menu.wireMenuItem("cancelRecording", Buttons.Media.cancelRecording);
             // cutAllButton
@@ -478,11 +517,6 @@ export var UiFunctions;
             mainEditor.save();
         };
         suppressUnusedWarning(insertTextIntoMainEditor);
-        const appendToMainEditor = (insertedString) => {
-            TextAreas.appendTextAndPutCursorAfter(mainEditorTextarea, insertedString);
-            mainEditor.save();
-            TextAreas.scrollToEnd(mainEditorTextarea);
-        };
         // addReplaceRuleButton
         const addReplaceRule = (requireWordBoundaryAtStart = false) => {
             const inputStr = TextAreas.selectedText(mainEditorTextarea);
@@ -553,19 +587,20 @@ const mainEditorTextareaWrapper = new TextAreaWrapper(mainEditorTextarea);
 const transcriptionPromptEditor = document.getElementById('transcriptionPromptEditor');
 const replaceRulesTextArea = document.getElementById('replaceRulesTextArea');
 const saveReplaceRules = () => {
-    LocalStorage.set("replaceRules", textAreaWithId("replaceRulesTextArea").value);
+    LONG_STORAGE_PROVIDER.set("replaceRules", textAreaWithId("replaceRulesTextArea").value);
     Cookies.set("replaceRules", ""); // This used to be stored in a cookie.
     // Delete old cookie
 };
 textAreaWithId('replaceRulesTextArea').addEventListener('input', UiFunctions
     .replaceRulesTextAreaOnInput);
-{ // Autosaves
+// Autosaves
+{
     const handleAutoSaveError = (msg) => {
         Log.error(msg);
     };
-    TextAreas.setAutoSave('replaceRules', 'replaceRulesTextArea', handleAutoSaveError, BrowserStorage.LocalStorage);
-    TextAreas.setAutoSave('editorText', 'mainEditorTextarea', handleAutoSaveError, BrowserStorage.LocalStorage);
-    TextAreas.setAutoSave('prompt', 'transcriptionPromptEditor', handleAutoSaveError, BrowserStorage.LocalStorage);
+    TextAreas.setAutoSave('replaceRules', 'replaceRulesTextArea', handleAutoSaveError, LONG_STORAGE_PROVIDER);
+    TextAreas.setAutoSave('editorText', 'mainEditorTextarea', handleAutoSaveError, LONG_STORAGE_PROVIDER);
+    TextAreas.setAutoSave('prompt', 'transcriptionPromptEditor', handleAutoSaveError, LONG_STORAGE_PROVIDER);
 }
 const getApiSelectedInUi = () => apiSelector.value;
 const getLanguageSelectedInUi = () => (languageSelector.value);
@@ -635,7 +670,7 @@ const setApiKeyCookie = (apiKey) => {
 };
 export const loadFormData = () => {
     const getLocalStorageOrCookie = (key) => {
-        return LocalStorage.get(key) ?? Cookies.get(key);
+        return LONG_STORAGE_PROVIDER.get(key) ?? Cookies.get(key);
     };
     mainEditorTextarea.value = getLocalStorageOrCookie("editorText") ?? "";
     transcriptionPromptEditor.value = getLocalStorageOrCookie("prompt") ?? "";

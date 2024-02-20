@@ -48,6 +48,7 @@ export var HtmlUtils;
         var textAreaWithId = HtmlUtils.NeverNull.textAreaWithId;
         var trimExceptASingleNewlineAtTheEnd = HelgeUtils.Strings.trimExceptASingleNewlineAtTheEnd;
         class TextAreaWrapper {
+            textArea;
             constructor(textArea) {
                 this.textArea = textArea;
             }
@@ -75,8 +76,8 @@ export var HtmlUtils;
             getCursor() {
                 return TextAreas.getCursor(this.textArea);
             }
-            setAutoSave(cookieName, handleError) {
-                TextAreas.setAutoSave(cookieName, this.textArea.id, handleError, BrowserStorage.LocalStorage);
+            setAutoSave(cookieName, handleError, storage) {
+                TextAreas.setAutoSave(cookieName, this.textArea.id, handleError, storage);
                 return this;
             }
             value() {
@@ -117,13 +118,13 @@ export var HtmlUtils;
          * @param storageKey - The name of the cookie to store the text area content.
          * @param id - The ID of the text area element.
          * @param handleError - A function to call when an error occurs.
-         * @param bsProvider
+         * @param storage
          */
-        TextAreas.setAutoSave = (storageKey, id, handleError, bsProvider) => {
+        TextAreas.setAutoSave = (storageKey, id, handleError, storage) => {
             textAreaWithId(id).addEventListener('input', () => {
                 const text = textAreaWithId(id).value;
                 try {
-                    bsProvider.set(storageKey, text.slice(0, MAX_COOKIE_SIZE - 1));
+                    storage.set(storageKey, text);
                 }
                 catch (e) {
                     handleError(`${storageKey}: Text area content exceeds 4095 characters. Content will not be saved.`);
@@ -163,6 +164,21 @@ export var HtmlUtils;
     })(Media = HtmlUtils.Media || (HtmlUtils.Media = {}));
     let BrowserStorage;
     (function (BrowserStorage) {
+        let LocalStorageVerified;
+        (function (LocalStorageVerified) {
+            LocalStorageVerified.set = (itemName, itemValue) => {
+                LocalStorage.set(itemName, itemValue);
+                // console.log(`itemValue: ${itemValue.length}`)
+                const reread = LocalStorage.get(itemName);
+                // console.log(`reread: ${reread?.length}`)
+                if (reread !== itemValue) {
+                    throw new Error(`Local storage item "${itemName}"'s was not stored correctly!`);
+                }
+            };
+            LocalStorageVerified.get = (name) => {
+                return LocalStorage.get(name);
+            };
+        })(LocalStorageVerified = BrowserStorage.LocalStorageVerified || (BrowserStorage.LocalStorageVerified = {}));
         let LocalStorage;
         (function (LocalStorage) {
             /**
@@ -328,7 +344,7 @@ export var HtmlUtils;
             WcMenu.close = (menuHeadingId) => {
                 elementWithId(menuHeadingId).dispatchEvent(new CustomEvent('rootMenuClose'));
             };
-            WcMenu.addMenuItem = (menuHeadingId) => {
+            WcMenu.addItem = (menuHeadingId) => {
                 return (id, menuFunction) => {
                     HtmlUtils.addClickListener(id, () => {
                         menuFunction();

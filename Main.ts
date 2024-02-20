@@ -15,20 +15,57 @@ import BrowserStorage = HtmlUtils.BrowserStorage;
 import {ctrlYRedo, ctrlZUndo} from "./DontInspect.js"
 import {HelgeUtils} from "./HelgeUtils.js"
 import {
-  INSERT_EDITOR_INTO_PROMPT, NEW_NOTE_DELIMITER, VERSION, WHERE_TO_INSERT_AT, WHISPER_TEMPERATURE
+  INSERT_EDITOR_INTO_PROMPT, LONG_STORAGE_PROVIDER, NEW_NOTE_DELIMITER, VERSION, WHERE_TO_INSERT_AT, WHISPER_TEMPERATURE
 } from "./Config.js"
 import {createCutFunction} from "./CutButton.js"
 import {HtmlUtils} from "./HtmlUtils.js"
 import {CurrentNote} from "./CurrentNote.js";
 
+import { mkConfig, generateCsv, download } from
+// @ts-ignore
+      "../nodecopy/export-to-csv/output/index.js";
+
 /** Inlined from HelgeUtils.Test.runTestsOnlyToday */
-const RUN_TESTS = HtmlUtils.isMsWindows() && new Date().toISOString().slice(0, 10) === "2024-01-27"
+const RUN_TESTS = HtmlUtils.isMsWindows() && new Date().toISOString()
+    .slice(0, 10) === "2024-01-27"
 if (RUN_TESTS) console.log("RUN_TESTS is true. This is only for " +
     "testing. Set it to false in production.")
 
 HtmlUtils.ErrorHandling.ExceptionHandlers.installGlobalDefault()
 
+export namespace Csv {
+
+// mkConfig merges your options with the defaults
+// and returns WithDefaults<ConfigOptions>
+  import buttonWithId = HtmlUtils.NeverNull.buttonWithId;
+  const csvConfig = mkConfig({ useKeysAsHeaders: true });
+
+  const mockData = [
+    {
+      name: "Rouky",
+      date: "2023-09-01",
+      percentage: 0.4,
+      quoted: '"Pickles"',
+    },
+    {
+      name: "Keiko",
+      date: "2023-09-01",
+      percentage: 0.9,
+      quoted: '"Cactus"',
+    },
+  ];
+
+// Converts your Array<Object> to a CsvOutput string based on the configs
+  const csv = generateCsv(csvConfig)(mockData);
+
+// Add a click handler that will run the `download` function.
+// `download` takes `csvConfig` and the generated `CsvOutput`
+// from `generateCsv`.
+  buttonWithId("downloadCsvButton").addEventListener("click", () => download(csvConfig)(csv));
+}
+
 export namespace mainEditor {
+  import LocalStorageVerified = HtmlUtils.BrowserStorage.LocalStorageVerified;
   export namespace Undo {
     let undoBuffer = ""
 
@@ -44,8 +81,24 @@ export namespace mainEditor {
     };
   }
 
+  export const append = (insertedString: string) => {
+    TextAreas.appendTextAndPutCursorAfter(mainEditorTextarea, insertedString)
+    mainEditor.save();
+    TextAreas.scrollToEnd(mainEditorTextarea);
+  }
+
+  export const appendDelimiter = () => {
+    mainEditorTextareaWrapper.trim()
+    append('\n' + NEW_NOTE_DELIMITER)
+    mainEditorTextarea.focus()
+  };
+
   export const save = () => {
-    LocalStorage.set("editorText", textAreaWithId("mainEditorTextarea").value);
+    try {
+      LONG_STORAGE_PROVIDER.set("editorText", textAreaWithId("mainEditorTextarea").value);
+    } catch (e) {
+      prompt("Error saving editor text: " + e)
+    }
     // Delete old cookie
     // Cookies.set("editorText", ""); // This used to be stored in a cookie.
   };
@@ -81,7 +134,7 @@ namespace Misc {
 export namespace Menu {
   import WcMenu = HtmlUtils.Menus.WcMenu;
 
-  export const wireMenuItem = WcMenu.addMenuItem("editorMenuHeading")
+  export const wireMenuItem = WcMenu.addItem("editorMenuHeading")
   export const close = () => WcMenu.close("editorMenuHeading")
 }
 
@@ -95,12 +148,6 @@ export namespace UiFunctions {
     import Cookies = HtmlUtils.BrowserStorage.Cookies;
     import addKeyboardShortcuts = Misc.addKeyboardShortcuts;
     import suppressUnusedWarning = HelgeUtils.suppressUnusedWarning;
-
-    export const appendDelimiterToMainEditor = () => {
-      mainEditorTextareaWrapper.trim()
-      appendToMainEditor('\n' + NEW_NOTE_DELIMITER)
-      mainEditorTextarea.focus()
-    };
 
     export namespace Media {
 
@@ -296,14 +343,16 @@ export namespace UiFunctions {
       const wireUploadButton = () => {
 
         const transcribeSelectedFile = () => {
-          const fileInput = document.getElementById('fileToUploadSelector') as HTMLInputElement
-          if (!fileInput?.files?.[0]) return
+          const fileInput = inputElementWithId('fileToUploadSelector')
+          if (!fileInput?.files?.[0])
+            return
           const file = fileInput.files[0];
           const reader = new FileReader();
           reader.onload = event => {
-            if (event.target===null || event.target.result===null) return
+            if (event.target===null || event.target.result===null)
+              return
             audioBlob = new Blob([event.target.result], {type: file.type});
-            appendDelimiterToMainEditor()
+            mainEditor.appendDelimiter()
             transcribeAudioBlob()
           };
           reader.readAsArrayBuffer(file);
@@ -484,7 +533,8 @@ export namespace UiFunctions {
     HtmlUtils.addClickListener("ctrlYButton", ctrlYRedo)
     HtmlUtils.addClickListener("addReplaceRuleButton", addReplaceRule)
     HtmlUtils.addClickListener("addWordReplaceRuleButton", addWordReplaceRule)
-    HtmlUtils.addClickListener("insertNewNoteDelimiterButton", appendDelimiterToMainEditor)
+    HtmlUtils.addClickListener("insertNewNoteDelimiterButton",
+        mainEditor.appendDelimiter)
 
 // cancelRecording
     Menu.wireMenuItem("cancelRecording", Buttons.Media.cancelRecording)
@@ -549,12 +599,6 @@ export namespace UiFunctions {
       mainEditor.save();
     }
     suppressUnusedWarning(insertTextIntoMainEditor)
-
-    const appendToMainEditor = (insertedString: string) => {
-      TextAreas.appendTextAndPutCursorAfter(mainEditorTextarea, insertedString)
-      mainEditor.save();
-      TextAreas.scrollToEnd(mainEditorTextarea);
-    }
 
     // addReplaceRuleButton
     const addReplaceRule = (requireWordBoundaryAtStart = false) => {
@@ -634,7 +678,7 @@ const transcriptionPromptEditor = document.getElementById('transcriptionPromptEd
 const replaceRulesTextArea = document.getElementById('replaceRulesTextArea') as HTMLTextAreaElement
 
 const saveReplaceRules = () => {
-  LocalStorage.set("replaceRules",
+  LONG_STORAGE_PROVIDER.set("replaceRules",
       textAreaWithId("replaceRulesTextArea").value)
   Cookies.set("replaceRules", ""); // This used to be stored in a cookie.
   // Delete old cookie
@@ -643,13 +687,14 @@ const saveReplaceRules = () => {
 textAreaWithId('replaceRulesTextArea').addEventListener('input', UiFunctions
     .replaceRulesTextAreaOnInput)
 
-{ // Autosaves
+// Autosaves
+{
   const handleAutoSaveError = (msg: string) => {
     Log.error(msg)
   }
-  TextAreas.setAutoSave('replaceRules', 'replaceRulesTextArea', handleAutoSaveError, BrowserStorage.LocalStorage)
-  TextAreas.setAutoSave('editorText', 'mainEditorTextarea', handleAutoSaveError, BrowserStorage.LocalStorage)
-  TextAreas.setAutoSave('prompt', 'transcriptionPromptEditor', handleAutoSaveError, BrowserStorage.LocalStorage)
+  TextAreas.setAutoSave('replaceRules', 'replaceRulesTextArea', handleAutoSaveError, LONG_STORAGE_PROVIDER)
+  TextAreas.setAutoSave('editorText', 'mainEditorTextarea', handleAutoSaveError, LONG_STORAGE_PROVIDER)
+  TextAreas.setAutoSave('prompt', 'transcriptionPromptEditor', handleAutoSaveError, LONG_STORAGE_PROVIDER)
 }
 
 const getApiSelectedInUi = () => (apiSelector.value as HelgeUtils.Transcription.ApiName)
@@ -725,7 +770,6 @@ namespace ReplaceByRules {
   }
 }
 
-
 const getApiKey = () => Cookies.get(apiSelector.value + 'ApiKey')
 
 const setApiKeyCookie = (apiKey: string) => {
@@ -734,7 +778,7 @@ const setApiKeyCookie = (apiKey: string) => {
 
 export const loadFormData = () => {
   const getLocalStorageOrCookie = (key: string) => {
-    return LocalStorage.get(key) ?? Cookies.get(key)
+    return LONG_STORAGE_PROVIDER.get(key) ?? Cookies.get(key)
   }
 
   mainEditorTextarea.value = getLocalStorageOrCookie("editorText")??""

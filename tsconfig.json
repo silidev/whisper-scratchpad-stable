@@ -1,19 +1,26 @@
 {
   "compilerOptions": {
-    "module": "ESNext",
-    "target": "es2021",
+    "module": "esnext",
+    "target": "esnext",
     "sourceMap": true,
     "outDir": "./generated",
-    "noImplicitAny": false,
+    "noImplicitAny": true,
     "strictNullChecks": true, // Otherwise you spent hours debugging why your code doesn't work
-
-/* TODOh Test this
-    "lib": ["dom", "es6"],
+    "declaration": true,
+    "lib": ["esnext","dom"],
+    "moduleResolution": "node",
     "strict": true,
-    "esModuleInterop": true
-*/
+    "forceConsistentCasingInFileNames": true,
+    "composite": true,
+    "baseUrl": ".", // This must be specified if "paths" is.
+    "paths": {
+      "../node_modules/*": ["./node_modules/*"] // This does NOT help. Instead I have to use tsignore
+    }
   },
-  "exclude": [
-    "node_modules"
+  "include": [
+    "**/*.js",
+    "**/*.ts",
+    "node_modules/**/*.ts"
   ],
+//  "exclude": ["node_modules"]
 }
