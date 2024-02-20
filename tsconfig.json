@@ -1,0 +1,19 @@
+{
+  "compilerOptions": {
+    "module": "ESNext",
+    "target": "es2021",
+    "sourceMap": true,
+    "outDir": "./generated",
+    "noImplicitAny": false,
+    "strictNullChecks": true, // Otherwise you spent hours debugging why your code doesn't work
+
+/* TODOh Test this
+    "lib": ["dom", "es6"],
+    "strict": true,
+    "esModuleInterop": true
+*/
+  },
+  "exclude": [
+    "node_modules"
+  ],
+}
