@@ -11,13 +11,15 @@ var TextAreaWrapper = HtmlUtils.TextAreas.TextAreaWrapper;
 var Cookies = HtmlUtils.BrowserStorage.Cookies;
 import { ctrlYRedo, ctrlZUndo } from "./DontInspect.js";
 import { HelgeUtils } from "./HelgeUtils.js";
-import { INSERT_EDITOR_INTO_PROMPT, LONG_STORAGE_PROVIDER, NEW_NOTE_DELIMITER, VERSION, WHERE_TO_INSERT_AT, WHISPER_TEMPERATURE } from "./Config.js";
+import { INSERT_EDITOR_INTO_PROMPT, NEW_NOTE_DELIMITER, VERIFY_LARGE_STORAGE, VERSION, WHERE_TO_INSERT_AT, WHISPER_TEMPERATURE } from "./Config.js";
 import { createCutFunction } from "./CutButton.js";
 import { HtmlUtils } from "./HtmlUtils.js";
 import { CurrentNote } from "./CurrentNote.js";
-import { mkConfig, generateCsv, download } from 
 // @ts-ignore
-"../nodecopy/export-to-csv/output/index.js";
+import { download, generateCsv, mkConfig } from "../node_modules/export-to-csv/output/index.js";
+const LARGE_STORAGE_PROVIDER = VERIFY_LARGE_STORAGE
+    ? HtmlUtils.BrowserStorage.LocalStorageVerified
+    : HtmlUtils.BrowserStorage.LocalStorage;
 /** Inlined from HelgeUtils.Test.runTestsOnlyToday */
 const RUN_TESTS = HtmlUtils.isMsWindows() && new Date().toISOString()
     .slice(0, 10) === "2024-01-27";
@@ -25,33 +27,6 @@ if (RUN_TESTS)
     console.log("RUN_TESTS is true. This is only for " +
         "testing. Set it to false in production.");
 HtmlUtils.ErrorHandling.ExceptionHandlers.installGlobalDefault();
-export var Csv;
-(function (Csv) {
-    // mkConfig merges your options with the defaults
-    // and returns WithDefaults<ConfigOptions>
-    var buttonWithId = HtmlUtils.NeverNull.buttonWithId;
-    const csvConfig = mkConfig({ useKeysAsHeaders: true });
-    const mockData = [
-        {
-            name: "Rouky",
-            date: "2023-09-01",
-            percentage: 0.4,
-            quoted: '"Pickles"',
-        },
-        {
-            name: "Keiko",
-            date: "2023-09-01",
-            percentage: 0.9,
-            quoted: '"Cactus"',
-        },
-    ];
-    // Converts your Array<Object> to a CsvOutput string based on the configs
-    const csv = generateCsv(csvConfig)(mockData);
-    // Add a click handler that will run the `download` function.
-    // `download` takes `csvConfig` and the generated `CsvOutput`
-    // from `generateCsv`.
-    buttonWithId("downloadCsvButton").addEventListener("click", () => download(csvConfig)(csv));
-})(Csv || (Csv = {}));
 export var mainEditor;
 (function (mainEditor) {
     let Undo;
@@ -79,7 +54,7 @@ export var mainEditor;
     };
     mainEditor.save = () => {
         try {
-            LONG_STORAGE_PROVIDER.set("editorText", textAreaWithId("mainEditorTextarea").value);
+            LARGE_STORAGE_PROVIDER.set("editorText", textAreaWithId("mainEditorTextarea").value);
         }
         catch (e) {
             prompt("Error saving editor text: " + e);
@@ -391,8 +366,9 @@ export var UiFunctions;
             buttonWithId("pauseRecordButton").addEventListener('click', pauseRecordButton);
             // ############## transcribeAudioBlob ##############
             Menu.wireMenuItem("transcribeAgainButton", Media.transcribeAudioBlob);
-            StateIndicator.update();
+            // ############## Misc ##############
             wireUploadButton();
+            StateIndicator.update();
         })(Media = Buttons.Media || (Buttons.Media = {})); // End of media buttons
         const clipboard = navigator.clipboard;
         Buttons.addEventListeners = () => {
@@ -502,6 +478,7 @@ export var UiFunctions;
             // copyButtons
             addEventListenerForCopyButton("copyReplaceRulesButton", "replaceRulesTextArea");
             addEventListenerForCopyButton("copyPromptButton", "transcriptionPromptEditor");
+            // ############## Misc ##############
             buttonWithId("saveAPIKeyButton").addEventListener('click', function () {
                 inputElementWithId('apiKeyInputField').value = ''; // Clear the input field
             });
@@ -511,6 +488,25 @@ export var UiFunctions;
             languageSelector.addEventListener('change', () => {
                 Cookies.set('languageSelector', languageSelector.value);
             });
+            // ############## downloadCsvs ##############
+            const downloadCsv = (prefix = "", postfix = "") => {
+                // Uses https://github.com/alexcaza/export-to-csv
+                const csvConfig = mkConfig({
+                    columnHeaders: ["t1"], showColumnHeaders: false, useTextFile: true
+                });
+                const textArray = mainEditorTextareaWrapper.value().split(NEW_NOTE_DELIMITER);
+                // Build a new array with elements like this: { text: textArray[i] }
+                const csvData = textArray.map((text) => ({
+                    t1: prefix + text + postfix
+                }));
+                const csv = generateCsv(csvConfig)(csvData);
+                return download(csvConfig)(csv);
+            };
+            const ankiClozeCsv = () => {
+                return downloadCsv("{{c1::", "}}");
+            };
+            Menu.wireMenuItem("ankiClozeCsv", ankiClozeCsv);
+            Menu.wireMenuItem("downloadCsv", downloadCsv);
         };
         const insertTextIntoMainEditor = (insertedString) => {
             TextAreas.insertTextAndPutCursorAfter(mainEditorTextarea, insertedString);
@@ -587,7 +583,7 @@ const mainEditorTextareaWrapper = new TextAreaWrapper(mainEditorTextarea);
 const transcriptionPromptEditor = document.getElementById('transcriptionPromptEditor');
 const replaceRulesTextArea = document.getElementById('replaceRulesTextArea');
 const saveReplaceRules = () => {
-    LONG_STORAGE_PROVIDER.set("replaceRules", textAreaWithId("replaceRulesTextArea").value);
+    LARGE_STORAGE_PROVIDER.set("replaceRules", textAreaWithId("replaceRulesTextArea").value);
     Cookies.set("replaceRules", ""); // This used to be stored in a cookie.
     // Delete old cookie
 };
@@ -598,9 +594,9 @@ textAreaWithId('replaceRulesTextArea').addEventListener('input', UiFunctions
     const handleAutoSaveError = (msg) => {
         Log.error(msg);
     };
-    TextAreas.setAutoSave('replaceRules', 'replaceRulesTextArea', handleAutoSaveError, LONG_STORAGE_PROVIDER);
-    TextAreas.setAutoSave('editorText', 'mainEditorTextarea', handleAutoSaveError, LONG_STORAGE_PROVIDER);
-    TextAreas.setAutoSave('prompt', 'transcriptionPromptEditor', handleAutoSaveError, LONG_STORAGE_PROVIDER);
+    TextAreas.setAutoSave('replaceRules', 'replaceRulesTextArea', handleAutoSaveError, LARGE_STORAGE_PROVIDER);
+    TextAreas.setAutoSave('editorText', 'mainEditorTextarea', handleAutoSaveError, LARGE_STORAGE_PROVIDER);
+    TextAreas.setAutoSave('prompt', 'transcriptionPromptEditor', handleAutoSaveError, LARGE_STORAGE_PROVIDER);
 }
 const getApiSelectedInUi = () => apiSelector.value;
 const getLanguageSelectedInUi = () => (languageSelector.value);
@@ -670,7 +666,7 @@ const setApiKeyCookie = (apiKey) => {
 };
 export const loadFormData = () => {
     const getLocalStorageOrCookie = (key) => {
-        return LONG_STORAGE_PROVIDER.get(key) ?? Cookies.get(key);
+        return LARGE_STORAGE_PROVIDER.get(key) ?? Cookies.get(key);
     };
     mainEditorTextarea.value = getLocalStorageOrCookie("editorText") ?? "";
     transcriptionPromptEditor.value = getLocalStorageOrCookie("prompt") ?? "";

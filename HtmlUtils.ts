@@ -96,7 +96,7 @@ export namespace HtmlUtils {
       }
 
       public setAutoSave(cookieName: string, handleError: (msg: string) => void,
-                         storage: HtmlUtils.BrowserStorage.BsProvider) {
+                         storage: BrowserStorage.BsProvider) {
         TextAreas.setAutoSave(cookieName, this.textArea.id, handleError, storage)
         return this
       }
@@ -203,9 +203,10 @@ export namespace HtmlUtils {
   }
 
   export namespace BrowserStorage {
+
     export interface BsProvider {
-      set(itemName: string, itemValue: string): void
-      get(name: string): string | null
+      set: (key: string, value: string) => void
+      get: (key: string) => string | null
     }
 
     export namespace LocalStorageVerified {

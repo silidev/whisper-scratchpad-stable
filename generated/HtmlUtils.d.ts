@@ -33,7 +33,7 @@ export declare namespace HtmlUtils {
             setCursor(position: number): this;
             insertTextAndPutCursorAfter(addedText: string): this;
             getCursor(): number;
-            setAutoSave(cookieName: string, handleError: (msg: string) => void, storage: HtmlUtils.BrowserStorage.BsProvider): this;
+            setAutoSave(cookieName: string, handleError: (msg: string) => void, storage: BrowserStorage.BsProvider): this;
             value(): string;
             setValue(value: string): this;
             focus(): this;
@@ -64,8 +64,8 @@ export declare namespace HtmlUtils {
     }
     namespace BrowserStorage {
         interface BsProvider {
-            set(itemName: string, itemValue: string): void;
-            get(name: string): string | null;
+            set: (key: string, value: string) => void;
+            get: (key: string) => string | null;
         }
         namespace LocalStorageVerified {
             const set: (itemName: string, itemValue: string) => void;

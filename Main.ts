@@ -9,21 +9,23 @@ import blinkSlow = HtmlUtils.blinkSlow;
 import escapeForRegExp = HelgeUtils.Strings.escapeRegExp;
 import elementWithId = HtmlUtils.NeverNull.elementWithId;
 import TextAreaWrapper = HtmlUtils.TextAreas.TextAreaWrapper;
-import LocalStorage = HtmlUtils.BrowserStorage.LocalStorage;
 import Cookies = HtmlUtils.BrowserStorage.Cookies;
-import BrowserStorage = HtmlUtils.BrowserStorage;
 import {ctrlYRedo, ctrlZUndo} from "./DontInspect.js"
 import {HelgeUtils} from "./HelgeUtils.js"
 import {
-  INSERT_EDITOR_INTO_PROMPT, LONG_STORAGE_PROVIDER, NEW_NOTE_DELIMITER, VERSION, WHERE_TO_INSERT_AT, WHISPER_TEMPERATURE
+  INSERT_EDITOR_INTO_PROMPT, NEW_NOTE_DELIMITER, VERIFY_LARGE_STORAGE, VERSION, WHERE_TO_INSERT_AT, WHISPER_TEMPERATURE
 } from "./Config.js"
 import {createCutFunction} from "./CutButton.js"
 import {HtmlUtils} from "./HtmlUtils.js"
 import {CurrentNote} from "./CurrentNote.js";
 
-import { mkConfig, generateCsv, download } from
 // @ts-ignore
-      "../nodecopy/export-to-csv/output/index.js";
+import {download, generateCsv, mkConfig} from "../node_modules/export-to-csv/output/index.js";
+
+const LARGE_STORAGE_PROVIDER =
+    VERIFY_LARGE_STORAGE
+        ? HtmlUtils.BrowserStorage.LocalStorageVerified
+        : HtmlUtils.BrowserStorage.LocalStorage;
 
 /** Inlined from HelgeUtils.Test.runTestsOnlyToday */
 const RUN_TESTS = HtmlUtils.isMsWindows() && new Date().toISOString()
@@ -33,39 +35,8 @@ if (RUN_TESTS) console.log("RUN_TESTS is true. This is only for " +
 
 HtmlUtils.ErrorHandling.ExceptionHandlers.installGlobalDefault()
 
-export namespace Csv {
-
-// mkConfig merges your options with the defaults
-// and returns WithDefaults<ConfigOptions>
-  import buttonWithId = HtmlUtils.NeverNull.buttonWithId;
-  const csvConfig = mkConfig({ useKeysAsHeaders: true });
-
-  const mockData = [
-    {
-      name: "Rouky",
-      date: "2023-09-01",
-      percentage: 0.4,
-      quoted: '"Pickles"',
-    },
-    {
-      name: "Keiko",
-      date: "2023-09-01",
-      percentage: 0.9,
-      quoted: '"Cactus"',
-    },
-  ];
-
-// Converts your Array<Object> to a CsvOutput string based on the configs
-  const csv = generateCsv(csvConfig)(mockData);
-
-// Add a click handler that will run the `download` function.
-// `download` takes `csvConfig` and the generated `CsvOutput`
-// from `generateCsv`.
-  buttonWithId("downloadCsvButton").addEventListener("click", () => download(csvConfig)(csv));
-}
-
 export namespace mainEditor {
-  import LocalStorageVerified = HtmlUtils.BrowserStorage.LocalStorageVerified;
+
   export namespace Undo {
     let undoBuffer = ""
 
@@ -95,7 +66,7 @@ export namespace mainEditor {
 
   export const save = () => {
     try {
-      LONG_STORAGE_PROVIDER.set("editorText", textAreaWithId("mainEditorTextarea").value);
+      LARGE_STORAGE_PROVIDER.set("editorText", textAreaWithId("mainEditorTextarea").value);
     } catch (e) {
       prompt("Error saving editor text: " + e)
     }
@@ -430,9 +401,10 @@ export namespace UiFunctions {
 // ############## transcribeAudioBlob ##############
       Menu.wireMenuItem("transcribeAgainButton", transcribeAudioBlob)
 
-      StateIndicator.update()
-
+// ############## Misc ##############
       wireUploadButton();
+
+      StateIndicator.update()
 
     } // End of media buttons
 
@@ -562,8 +534,6 @@ export namespace UiFunctions {
       buttonWithId("cutAnkiButton").addEventListener('click',
           createCutFunction(mainEditorTextarea, "{{c1::", "}}"))
 
-
-
 // copyButtons
       /** Adds an event listener to a button that copies the text of an input element to the clipboard. */
       const addEventListenerForCopyButton = (buttonId: string, inputElementId: string) => {
@@ -581,6 +551,7 @@ export namespace UiFunctions {
       addEventListenerForCopyButton("copyReplaceRulesButton", "replaceRulesTextArea")
       addEventListenerForCopyButton("copyPromptButton", "transcriptionPromptEditor")
 
+// ############## Misc ##############
       buttonWithId("saveAPIKeyButton").addEventListener('click', function () {
         inputElementWithId('apiKeyInputField').value = ''; // Clear the input field
       })
@@ -592,6 +563,28 @@ export namespace UiFunctions {
       languageSelector.addEventListener('change', () => {
         Cookies.set('languageSelector', languageSelector.value)
       })
+
+// ############## downloadCsvs ##############
+      const downloadCsv = (prefix = "", postfix = "") => {
+        // Uses https://github.com/alexcaza/export-to-csv
+        const csvConfig = mkConfig({
+          columnHeaders: ["t1"], showColumnHeaders: false, useTextFile: true
+        });
+        const textArray = mainEditorTextareaWrapper.value().split(NEW_NOTE_DELIMITER)
+        // Build a new array with elements like this: { text: textArray[i] }
+        const csvData = textArray.map((text: string) => ({
+          t1: prefix + text + postfix
+        }))
+        const csv = generateCsv(csvConfig)(csvData);
+        return download(csvConfig)(csv);
+      };
+
+      const ankiClozeCsv = () => {
+        return downloadCsv("{{c1::", "}}");
+      };
+      Menu.wireMenuItem("ankiClozeCsv", ankiClozeCsv);
+      Menu.wireMenuItem("downloadCsv", downloadCsv);
+
     }
 
     const insertTextIntoMainEditor = (insertedString: string) => {
@@ -678,7 +671,7 @@ const transcriptionPromptEditor = document.getElementById('transcriptionPromptEd
 const replaceRulesTextArea = document.getElementById('replaceRulesTextArea') as HTMLTextAreaElement
 
 const saveReplaceRules = () => {
-  LONG_STORAGE_PROVIDER.set("replaceRules",
+  LARGE_STORAGE_PROVIDER.set("replaceRules",
       textAreaWithId("replaceRulesTextArea").value)
   Cookies.set("replaceRules", ""); // This used to be stored in a cookie.
   // Delete old cookie
@@ -692,9 +685,9 @@ textAreaWithId('replaceRulesTextArea').addEventListener('input', UiFunctions
   const handleAutoSaveError = (msg: string) => {
     Log.error(msg)
   }
-  TextAreas.setAutoSave('replaceRules', 'replaceRulesTextArea', handleAutoSaveError, LONG_STORAGE_PROVIDER)
-  TextAreas.setAutoSave('editorText', 'mainEditorTextarea', handleAutoSaveError, LONG_STORAGE_PROVIDER)
-  TextAreas.setAutoSave('prompt', 'transcriptionPromptEditor', handleAutoSaveError, LONG_STORAGE_PROVIDER)
+  TextAreas.setAutoSave('replaceRules', 'replaceRulesTextArea', handleAutoSaveError, LARGE_STORAGE_PROVIDER)
+  TextAreas.setAutoSave('editorText', 'mainEditorTextarea', handleAutoSaveError, LARGE_STORAGE_PROVIDER)
+  TextAreas.setAutoSave('prompt', 'transcriptionPromptEditor', handleAutoSaveError, LARGE_STORAGE_PROVIDER)
 }
 
 const getApiSelectedInUi = () => (apiSelector.value as HelgeUtils.Transcription.ApiName)
@@ -778,7 +771,7 @@ const setApiKeyCookie = (apiKey: string) => {
 
 export const loadFormData = () => {
   const getLocalStorageOrCookie = (key: string) => {
-    return LONG_STORAGE_PROVIDER.get(key) ?? Cookies.get(key)
+    return LARGE_STORAGE_PROVIDER.get(key) ?? Cookies.get(key)
   }
 
   mainEditorTextarea.value = getLocalStorageOrCookie("editorText")??""
